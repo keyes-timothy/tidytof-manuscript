@@ -1,0 +1,289 @@
+---
+title: "Example {tidytof} workflows"
+subtitle: "Supplementary Information"
+author: "Timothy Keyes, Abhishek Koladiya, Yu Chen Lo, Garry P. Nolan, and Kara L. Davis"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: 
+    toc: true
+    toc_depth: 2
+  officedown::rdocx_document:
+    mapstyles:
+      Normal: First Paragraph
+    reference_docx: reference.docx
+    tables: 
+      width: 1.0
+  html_document:
+    df_print: paged
+bibliography: supplementary_references.bib
+csl: biomed-central.csl
+urlcolor: blue
+---
+
+```{r setup_workflows, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  warning = FALSE, 
+  message = FALSE 
+)
+
+options(tibble.print_min = 4L, tibble.print_max = 4L)
+
+library(tidyverse)
+library(tidytof)
+library(kableExtra)
+library(flextable)
+library(officer)
+```
+
+In this note, we provide some example code and output demonstrating how to use {tidytof} to perform common CyTOF data analysis tasks. For additional, exhaustive details for each of {tidytof}'s functions, see [the package website](https://keyes-timothy.github.io/tidytof/index.html).
+
+### Accessing the data for this vignette
+
+First, we will download a dataset originally collected for the development of the [CITRUS](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4084463/) algorithm. These data are available in the `{HDCytoData}` package, which is available on Bioconductor and can be accessed with the following command:
+
+```{r, eval = FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+BiocManager::install("HDCytoData")
+```
+
+To load the CITRUS data into our current R session, we can call a function from the `{HDCytoData}`, which will provide it to us in a format from the `{flowCore}` package (called a "flowSet"). To convert this into a tidy tibble, we can use `{tidytof}` built-in method for converting {flowCore} objects into `tof_tbl`'s .
+
+```{r, message = FALSE, warning = FALSE}
+citrus_raw <- HDCytoData::Bodenmiller_BCR_XL_flowSet()
+
+citrus_data <- 
+  citrus_raw %>% 
+  as_tof_tbl(sep = "_")
+```
+
+Thus, we can see that `citrus_data` is a `tof_tbl` with `r nrow(citrus_data)` cells (one in each row) and `r ncol(citrus_data)` pieces of information about each cell (one in each column).
+
+We can also extract some metadata from the raw data and join it with our single-cell data using some functions from the `tidyverse`:
+
+```{r}
+citrus_metadata <- 
+  tibble(
+    file_name = as.character(flowCore::pData(citrus_raw)[[1]]), 
+    sample_id = 1:length(file_name),
+    patient = stringr::str_extract(file_name, "patient[:digit:]"), 
+    stimulation = stringr::str_extract(file_name, "(BCR-XL)|Reference")
+  ) %>% 
+  mutate(
+    stimulation = if_else(stimulation == "Reference", "Basal", stimulation)
+  )
+
+citrus_metadata %>%
+  head()
+```
+
+Thus, we now have sample-level information about which patient each sample was collected from and which stimulation condition ("Basal" or "BCR-XL") each sample was exposed to before data acquisition.
+
+Finally, we can join this metadata with our single-cell `tof_tbl` to obtain the cleaned dataset.
+
+```{r}
+citrus_data <- 
+  citrus_data %>% 
+  left_join(citrus_metadata, by = "sample_id") 
+```
+
+
+After these data cleaning steps, we now have `citrus_data`, a `tof_tbl` containing cells collected from 8 patients. Specifically, 2 samples were taken from each patient: one in which the cells' B-cell receptors were stimulated ("BCR-XL") and one in which they were not ("Basal"). In `citrus_data`, each cell's patient of origin is stored in the `patient` column, and each cell's stimulation condition is stored in the `stimulation` column. In addition, the `population_id` column stores information about cluster labels that were applied to each cell using a combination of FlowSOM clustering and manual merging (for details, run `?HDCytoData::Bodenmiller_BCR_XL` in the R console).
+
+### Analyzing single-cell data
+
+As a `tof_tbl`, `citrus_data` has access to all {dplyr} functions for general data cleaning. For example, we might want to remove some columns that are either redundant or represent measurements that we're not interested in using the `select()` function. In addition, we might want to convert some categorical columns initially represented as numeric vectors into character vectors so that we don't accidentally use them for computation using the `mutate()` function. We can also rename each of our protein measurement columns to omit the metal names using the `rename()` function in order to make column selection a bit easier. 
+
+```{r}
+citrus_data <- 
+  citrus_data %>% 
+  select(
+    -Time, 
+    -Cell_length,
+    -contains("DNA"), 
+    -contains("Dd"), 
+    -contains("BC", ignore.case = FALSE), 
+    -patient_id, 
+    -group_id
+  ) %>% 
+  mutate(
+    population_id = as.character(population_id), 
+    sample_id = as.character(sample_id)
+  ) %>% 
+  rename_with(
+    .fn = ~ str_remove(.x, pattern = "_.+$"), 
+    .cols = c(-file_name, -population_id, -sample_id)
+  )
+```
+
+We can also apply a common variance-stabilizing transformation (the arcsinh transformation) to each protein measurement column of `citrus_data` using {tidytof}'s `tof_preprocess()` verb: 
+
+```{r}
+citrus_data <- 
+  citrus_data %>% 
+  tof_preprocess()
+```
+
+From here, we can try out several workflows for analyzing and visualizing `citrus_data` using various {tidytof} verbs: 
+
+
+```{r}
+citrus_data %>% 
+  # cluster cells based on their surface phenotype using flowSOM
+  tof_cluster(cluster_cols = starts_with("CD"), method = "flowsom") %>% 
+  # downsample cells from each flowsom cluster
+  tof_downsample(group_cols = population_id, num_cells = 100, method = "constant") %>% 
+  # make a force-directed layout plot 
+  tof_plot_cells_layout(knn_cols = starts_with("CD"), color_col = .flowsom_metacluster) 
+```
+
+
+```{r}
+citrus_data %>% 
+  # downsample within each (pre-identified) cell subpopulation
+  tof_downsample(group_cols = population_id, num_cells = 500, method = "constant") %>% 
+  # perform dimensionality reduction using UMAP
+  tof_reduce_dimensions(method = "umap") %>% 
+  # make a plot
+  tof_plot_cells_embedding(
+    embedding_cols = contains("UMAP"), 
+    color_col = population_id
+  )
+```
+
+
+```{r}
+citrus_data %>% 
+  # downsample within each (pre-identified) cell subpopulation
+  tof_downsample(group_cols = population_id, num_cells = 500, method = "constant") %>% 
+  # perform dimensionality reduction using tsne
+  tof_reduce_dimensions(method = "tsne") %>% 
+  # make a plot
+  tof_plot_cells_embedding(
+    embedding_cols = contains("tsne"), 
+    color_col = population_id
+  )
+```
+
+### Analyzing cluster-level data
+
+
+```{r}
+citrus_data %>% 
+  # perform differential abundance analysis using paired t-tests with 
+  # multiple hypothesis correction
+  tof_daa_ttest(
+    cluster_col = population_id, 
+    group_cols = c(patient, stimulation), 
+    effect_col = stimulation, 
+    test_type = "paired"
+  )
+```
+
+
+```{r}
+citrus_data %>% 
+  # perform differential expression analysis using paired t-tests with 
+  # multiple hypothesis correction
+  tof_dea_ttest(
+    cluster_col = population_id,
+    marker_cols = where(is.double), 
+    group_cols = c(patient, stimulation), 
+    effect_col = stimulation, 
+    test_type = "paired"
+  ) %>%
+  # select only the significant cluster-marker pairs 
+  dplyr::filter(significant == "*")
+```
+
+
+```{r, eval = FALSE}
+citrus_data %>% 
+  # compute the mean of each marker for each cluster in each patient 
+  tof_extract_central_tendency(
+    cluster_col = population_id, 
+    group_cols = patient, 
+    marker_cols = where(is.double),
+    central_tendency_function = mean
+  ) 
+```
+
+```{r}
+citrus_data %>% 
+  # compute the abundance of each cluster in each  patient
+  tof_extract_proportion(
+    cluster_col = population_id, 
+    group_cols = patient 
+  )
+```
+
+
+```{r}
+citrus_data %>% 
+  # compute the median of each marker for each cluster in each patient 
+  tof_extract_central_tendency(
+    cluster_col = population_id, 
+    group_cols = patient, 
+    marker_cols = where(is.double),
+    central_tendency_function = median, 
+    # request in long format, i.e. suitable for {ggplot2}
+    format = "long"
+  ) %>% 
+  # only look at pSTAT1 
+  dplyr::filter(stringr::str_detect(channel, "pStat1")) %>% 
+  # make a plot using {ggplot2}
+  ggplot(aes(x = population_id, y = values, fill = patient)) + 
+  geom_point(shape = 21) + 
+  labs(subtitle = "median pSTAT1 expression in each patient") + 
+  theme_bw()
+```
+
+### Analyzing sample-level data
+
+Using `citrus_data`, we can build a predictive model of for which samples are in the stimulation condition and which ones are in the basal condition solely using signaling phenotypes.  
+
+```{r}
+signaling <- 
+  c("pNFkB", "pp38", "pStat5", "pAkt", "pStat1", "pStat3", "pBtk", "pS6")
+
+model_result <-
+  citrus_data %>% 
+  # compute sample-level features from the input single-cell data using only 
+  # signaling columns (ones most relevant to the stimulation condition)
+  tof_extract_features(
+    cluster_col = population_id, 
+    group_cols = c(patient, stimulation), 
+    lineage_cols = all_of(signaling), 
+    signaling_cols = all_of(signaling)
+  ) %>% 
+  # encode outcome variable as a factor
+  mutate(stimulation = as.factor(stimulation)) %>% 
+  # split data into 3 cross-validation folds
+  tof_split_data(num_cv_folds = 3) %>% 
+  # train logistic regression model with lasso regularization
+  # using 3-fold cross validation
+  tof_train_model(
+    predictor_cols = c(-patient, -stimulation), 
+    response_col = stimulation, 
+    model_type = "two-class", 
+    remove_zv_predictors = TRUE, 
+    impute_missing_predictors = TRUE,
+    hyperparameter_grid = tof_create_grid(
+      mixture_values = 1, 
+      penalty_values = c(0.001, 0.01, 0.1, 0.4)
+    )
+  )
+
+# assess the model's performance on the full dataset
+model_metrics <- 
+  model_result %>% 
+  tof_assess_model()
+
+
+model_result %>% 
+  tof_plot_model()
+```
+
