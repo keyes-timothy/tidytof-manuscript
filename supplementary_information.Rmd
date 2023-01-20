@@ -49,7 +49,9 @@ summarize <- dplyr::summarize
 
 ```
 
+
 <!---BLOCK_TOC--->
+
 
 \newpage
 
@@ -60,26 +62,26 @@ summarize <- dplyr::summarize
 ```{r}
 data(ddpr_data)
 sup_table_data <- 
-  ddpr_data %>% 
-  tof_preprocess(undo_noise = FALSE) %>% 
-  tof_cluster(method = "kmeans", cluster_cols = c(cd19, cd45), num_clusters = 4) %>% 
-  rename(cluster = .kmeans_cluster) %>% 
+  ddpr_data |> 
+  tof_preprocess(undo_noise = FALSE) |> 
+  tof_cluster(method = "kmeans", cluster_cols = c(cd19, cd45), num_clusters = 4) |> 
+  rename(cluster = .kmeans_cluster) |> 
   tof_downsample_constant(
     group_cols = cluster,
     num_cells = 100
-  ) %>% 
+  ) |> 
   tof_reduce_dimensions(
     method = "tsne", 
     tsne_cols = starts_with("cd", ignore.case = FALSE)
-    ) %>% 
+    ) |>
   tof_preprocess(
     transform_fun = function(x) round(x, digits = 2), 
     undo_noise = FALSE
-  ) %>% 
+  ) |> 
   mutate(
-    patient = sample(x = paste0("patient ", 1:3), replace = TRUE, size = nrow(.))
-  ) %>% 
-  dplyr::select(cd45, cd19, cd20, starts_with(".tsne"), patient, cluster) %>% 
+    patient = sample(x = paste0("patient ", 1:3), replace = TRUE, size = n())
+  ) |> 
+  dplyr::select(cd45, cd19, cd20, starts_with(".tsne"), patient, cluster) |> 
   rename(
     protein_1 = cd45, 
     protein_2 = cd19,
@@ -89,48 +91,48 @@ sup_table_data <-
   )
 
 patient_1 <-
-  sup_table_data %>% 
+  sup_table_data |> 
   filter(patient == "patient 1")
 
 patient_2 <-
-  sup_table_data %>% 
+  sup_table_data |> 
   filter(patient == "patient 2")
 
 patient_3 <-
-  sup_table_data %>% 
+  sup_table_data |> 
   filter(patient == "patient 3")
 
 patient_1 <- 
   bind_rows(
-    filter(patient_1, cluster == "1") %>% 
+    filter(patient_1, cluster == "1") |> 
       slice_head(n = 1), 
-    filter(patient_1, cluster == "2") %>% 
+    filter(patient_1, cluster == "2") |> 
       slice_head(n = 1), 
-    filter(patient_1, cluster == "4") %>% 
+    filter(patient_1, cluster == "4") |> 
       slice_head(n = 1)
   )
 
 patient_2 <- 
   bind_rows(
-    filter(patient_2, cluster == "1") %>% 
+    filter(patient_2, cluster == "1") |> 
       slice_head(n = 1), 
-    filter(patient_2, cluster == "4") %>% 
+    filter(patient_2, cluster == "4") |> 
       slice_head(n = 2)
   )
 
 patient_3 <- 
   bind_rows(
-    filter(patient_3, cluster == "3") %>% 
+    filter(patient_3, cluster == "3") |> 
       slice_head(n = 1), 
-    filter(patient_3, cluster == "2") %>% 
+    filter(patient_3, cluster == "2") |> 
       slice_head(n = 1), 
-    filter(patient_3, cluster == "3") %>% 
+    filter(patient_3, cluster == "3") |> 
       slice_tail(n = 1)
   )
 
 sup_table_data <- 
-  bind_rows(patient_1, patient_2, patient_3) %>% 
-  arrange(patient) %>% 
+  bind_rows(patient_1, patient_2, patient_3) |> 
+  arrange(patient) |> 
   relocate(contains("protein"), contains("tsne"), cluster, everything())
 
 patient_colors <- 
@@ -140,72 +142,75 @@ patient_colors <-
   )
 
 sup_table_data <- 
-  sup_table_data %>% 
-  left_join(patient_colors) %>% 
-  mutate(sample_type = c(rep("healthy", 6), rep("cancer", 3))) %>% 
-  relocate(patient, .after = last_col()) %>% 
+  sup_table_data |> 
+  left_join(patient_colors) |> 
+  mutate(sample_type = c(rep("healthy", 6), rep("cancer", 3))) |> 
+  relocate(patient, .after = last_col()) |> 
   as.data.frame()
 
 row.names(sup_table_data) <- paste0("Cell ", 1:9)
 
 ```
 
+
 ```{r, echo = FALSE, tab.topcaption	= FALSE, tab.id="supplemental_table_1"}
 stable_1 <- 
-  sup_table_data %>% 
-  select(-color) %>% 
-  #rename_with(.fn = str_remove, .cols = c(contains("protein"), contains("tsne")), pattern = "_") %>% 
-  as_tibble(rownames = "cell_id") %>% 
-  flextable::regulartable() %>% 
+  sup_table_data |> 
+  select(-color) |> 
+  #rename_with(.fn = str_remove, .cols = c(contains("protein"), contains("tsne")), pattern = "_") |> 
+  as_tibble(rownames = "cell_id") |> 
+  flextable::regulartable() |> 
   flextable::add_header_row(
     values = c("", "Proteomic data", "{tidytof} calculations", "Metadata"), 
     colwidths = c(1, 3, 3, 2)
-  ) %>% 
-  flextable::theme_alafoli() %>% 
-  flextable::align(i = 1, align = "center", part = "header") %>% 
-  flextable::align(i = 2, j = "cluster", align = "right", part = "header") %>% 
-  flextable::align(j = "cluster", align = "right", part = "body") %>% 
+  ) |> 
+  flextable::theme_alafoli() |> 
+  flextable::align(i = 1, align = "center", part = "header") |> 
+  flextable::align(i = 2, j = "cluster", align = "center", part = "header") |> 
+  flextable::align(j = "cluster", align = "center", part = "body") |> 
   flextable::vline(
     j = c("cell_id", "protein_3", "cluster"), 
     border = officer::fp_border(color = "gray80", width = 0.5),
     part = "all"
-  ) %>% 
-  flextable::bg(i = 1, bg = "gray97", part = "header") %>% 
-  flextable::bg(i = 2, bg = "gray91", part = "header") %>% 
-  flextable::bold(i = 2, bold = TRUE, part = "header") %>% 
-  flextable::color(color = "black", part = "all") %>% 
-  flextable::set_table_properties(layout = "autofit")
+  ) |> 
+  flextable::bg(i = 1, bg = "gray97", part = "header") |> 
+  flextable::bg(i = 2, bg = "gray91", part = "header") |> 
+  flextable::bold(i = 2, bold = TRUE, part = "header") |> 
+  flextable::color(color = "black", part = "all") |> 
+  #flextable::set_table_properties(layout = "autofit") |> 
+  flextable::autofit()
 
 stable_1
 ```
 
 **Supplementary Table 1 - Example of a `{tidytof}` data frame.** {tidytof} represents high-dimensional cytometry data in a "tidy format" using an extended data frame called a "tof_tbl". In this format, data are represented such that each cell is given its own row and each measurement or piece of metadata is given its own column.
 
+
 ```{r, eval = FALSE}
-sup_table_data %>% 
-  as_tibble(rownames = "cell_id") %>% 
-  select(-color) %>% 
-  flextable::as_grouped_data(groups = "patient") %>% 
-  relocate(cell_id, .after = last_col()) %>% 
-  #rename_with(.fn = str_remove, .cols = c(contains("protein"), contains("tsne")), pattern = "_") %>% 
-  flextable::regulartable() %>% 
+sup_table_data |> 
+  as_tibble(rownames = "cell_id") |> 
+  select(-color) |> 
+  flextable::as_grouped_data(groups = "patient") |> 
+  relocate(cell_id, .after = last_col()) |> 
+  #rename_with(.fn = str_remove, .cols = c(contains("protein"), contains("tsne")), pattern = "_") |> 
+  flextable::regulartable() |> 
   flextable::add_header_row(
     values = c("", "Proteomic data", "{tidytof} calculations", "Metadata"), 
     colwidths = c(1, 3, 3, 2)
-  ) %>% 
-  flextable::theme_alafoli() %>% 
-  flextable::align(i = 1, align = "center", part = "header") %>% 
-  flextable::align(i = 2, j = "cluster", align = "right", part = "header") %>% 
-  flextable::align(j = "cluster", align = "right", part = "body") %>% 
+  ) |> 
+  flextable::theme_alafoli() |> 
+  flextable::align(i = 1, align = "center", part = "header") |> 
+  flextable::align(i = 2, j = "cluster", align = "right", part = "header") |> 
+  flextable::align(j = "cluster", align = "right", part = "body") |> 
   flextable::vline(
     j = c("cell_id", "protein_3", "cluster"), 
     border = officer::fp_border(color = "gray80", width = 0.5),
     part = "all"
-  ) %>% 
-  flextable::bg(i = 1, bg = "gray97", part = "header") %>% 
-  flextable::bg(i = 2, bg = "gray91", part = "header") %>% 
-  flextable::bold(i = 2, bold = TRUE, part = "header") %>% 
-  flextable::color(color = "black", part = "all") %>% 
+  ) |> 
+  flextable::bg(i = 1, bg = "gray97", part = "header") |> 
+  flextable::bg(i = 2, bg = "gray91", part = "header") |> 
+  flextable::bold(i = 2, bold = TRUE, part = "header") |> 
+  flextable::color(color = "black", part = "all") |> 
   flextable::set_table_properties(layout = "autofit")
   
 ```
@@ -258,9 +263,9 @@ sup_table_data %>%
 | tof_cluster()        | - tof_cluster_ddpr()            | Assign cluster labels to each cell|
 |                      | - tof_cluster_flowsom()         | in a dataset using one of several |
 |                      | - tof_cluster_kmeans()          | clustering algorithms commonly    | 
-|                      | - tof_cluster_phenograph()      | applied to mass cytometry data    | 
-|                      | - tof_cluster_xshift()          |[@ddpr; @pheno; @flowsom; @xshift].|
-|                      |                                 |                                   |
+|                      | - tof_cluster_phenograph()      | applied to high-dimensional       | 
+|                      | - tof_cluster_xshift()          | cytometry data                    |
+|                      |                                 |[@ddpr; @pheno; @flowsom; @xshift].|
 +----------------------+---------------------------------+-----------------------------------+
 | tof_metacluster()    | - tof_metacluster_consensus()   | Agglomerate clusters into a       |
 |                      | - tof_metacluster_flowsom()     | smaller, user-specified number of |
@@ -341,6 +346,8 @@ sup_table_data %>%
 
 **Supplementary Table 4 - Sample-level verbs.** A comprehensive table of `{tidytof}` verbs that operate at the whole-sample level.
 
+
+
 \newpage
 
 # {tidytof} performance benchmarking
@@ -350,6 +357,7 @@ sup_table_data %>%
 ```
 
 \newpage
+
 
 # Supplementary Notes
 
@@ -369,5 +377,6 @@ sup_table_data %>%
 
 
 \newpage
+
 
 # References

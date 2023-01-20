@@ -56,7 +56,7 @@ To load the CITRUS data into our current R session, we can call a function from 
 citrus_raw <- HDCytoData::Bodenmiller_BCR_XL_flowSet()
 
 citrus_data <- 
-  citrus_raw %>% 
+  citrus_raw |> 
   as_tof_tbl(sep = "_")
 ```
 
@@ -71,12 +71,12 @@ citrus_metadata <-
     sample_id = 1:length(file_name),
     patient = stringr::str_extract(file_name, "patient[:digit:]"), 
     stimulation = stringr::str_extract(file_name, "(BCR-XL)|Reference")
-  ) %>% 
+  ) |> 
   mutate(
     stimulation = if_else(stimulation == "Reference", "Basal", stimulation)
   )
 
-citrus_metadata %>%
+citrus_metadata |>
   head()
 ```
 
@@ -86,7 +86,7 @@ Finally, we can join this metadata with our single-cell `tof_tbl` to obtain the 
 
 ```{r}
 citrus_data <- 
-  citrus_data %>% 
+  citrus_data |> 
   left_join(citrus_metadata, by = "sample_id") 
 ```
 
@@ -99,7 +99,7 @@ As a `tof_tbl`, `citrus_data` has access to all {dplyr} functions for general da
 
 ```{r}
 citrus_data <- 
-  citrus_data %>% 
+  citrus_data |> 
   select(
     -Time, 
     -Cell_length,
@@ -108,11 +108,11 @@ citrus_data <-
     -contains("BC", ignore.case = FALSE), 
     -patient_id, 
     -group_id
-  ) %>% 
+  ) |> 
   mutate(
     population_id = as.character(population_id), 
     sample_id = as.character(sample_id)
-  ) %>% 
+  ) |> 
   rename_with(
     .fn = ~ str_remove(.x, pattern = "_.+$"), 
     .cols = c(-file_name, -population_id, -sample_id)
@@ -123,7 +123,7 @@ We can also apply a common variance-stabilizing transformation (the arcsinh tran
 
 ```{r}
 citrus_data <- 
-  citrus_data %>% 
+  citrus_data |> 
   tof_preprocess()
 ```
 
@@ -131,22 +131,22 @@ From here, we can try out several workflows for analyzing and visualizing `citru
 
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # cluster cells based on their surface phenotype using flowSOM
-  tof_cluster(cluster_cols = starts_with("CD"), method = "flowsom") %>% 
+  tof_cluster(cluster_cols = starts_with("CD"), method = "flowsom") |> 
   # downsample cells from each flowsom cluster
-  tof_downsample(group_cols = population_id, num_cells = 100, method = "constant") %>% 
+  tof_downsample(group_cols = population_id, num_cells = 100, method = "constant") |> 
   # make a force-directed layout plot 
   tof_plot_cells_layout(knn_cols = starts_with("CD"), color_col = .flowsom_metacluster) 
 ```
 
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # downsample within each (pre-identified) cell subpopulation
-  tof_downsample(group_cols = population_id, num_cells = 500, method = "constant") %>% 
+  tof_downsample(group_cols = population_id, num_cells = 500, method = "constant") |> 
   # perform dimensionality reduction using UMAP
-  tof_reduce_dimensions(method = "umap") %>% 
+  tof_reduce_dimensions(method = "umap") |> 
   # make a plot
   tof_plot_cells_embedding(
     embedding_cols = contains("UMAP"), 
@@ -156,11 +156,11 @@ citrus_data %>%
 
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # downsample within each (pre-identified) cell subpopulation
-  tof_downsample(group_cols = population_id, num_cells = 500, method = "constant") %>% 
+  tof_downsample(group_cols = population_id, num_cells = 500, method = "constant") |> 
   # perform dimensionality reduction using tsne
-  tof_reduce_dimensions(method = "tsne") %>% 
+  tof_reduce_dimensions(method = "tsne") |> 
   # make a plot
   tof_plot_cells_embedding(
     embedding_cols = contains("tsne"), 
@@ -172,7 +172,7 @@ citrus_data %>%
 
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # perform differential abundance analysis using paired t-tests with 
   # multiple hypothesis correction
   tof_daa_ttest(
@@ -185,7 +185,7 @@ citrus_data %>%
 
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # perform differential expression analysis using paired t-tests with 
   # multiple hypothesis correction
   tof_dea_ttest(
@@ -194,14 +194,14 @@ citrus_data %>%
     group_cols = c(patient, stimulation), 
     effect_col = stimulation, 
     test_type = "paired"
-  ) %>%
+  ) |>
   # select only the significant cluster-marker pairs 
   dplyr::filter(significant == "*")
 ```
 
 
 ```{r, eval = FALSE}
-citrus_data %>% 
+citrus_data |> 
   # compute the mean of each marker for each cluster in each patient 
   tof_extract_central_tendency(
     cluster_col = population_id, 
@@ -212,7 +212,7 @@ citrus_data %>%
 ```
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # compute the abundance of each cluster in each  patient
   tof_extract_proportion(
     cluster_col = population_id, 
@@ -222,7 +222,7 @@ citrus_data %>%
 
 
 ```{r}
-citrus_data %>% 
+citrus_data |> 
   # compute the median of each marker for each cluster in each patient 
   tof_extract_central_tendency(
     cluster_col = population_id, 
@@ -231,9 +231,9 @@ citrus_data %>%
     central_tendency_function = median, 
     # request in long format, i.e. suitable for {ggplot2}
     format = "long"
-  ) %>% 
+  ) |> 
   # only look at pSTAT1 
-  dplyr::filter(stringr::str_detect(channel, "pStat1")) %>% 
+  dplyr::filter(stringr::str_detect(channel, "pStat1")) |> 
   # make a plot using {ggplot2}
   ggplot(aes(x = population_id, y = values, fill = patient)) + 
   geom_point(shape = 21) + 
@@ -250,7 +250,7 @@ signaling <-
   c("pNFkB", "pp38", "pStat5", "pAkt", "pStat1", "pStat3", "pBtk", "pS6")
 
 model_result <-
-  citrus_data %>% 
+  citrus_data |> 
   # compute sample-level features from the input single-cell data using only 
   # signaling columns (ones most relevant to the stimulation condition)
   tof_extract_features(
@@ -258,11 +258,11 @@ model_result <-
     group_cols = c(patient, stimulation), 
     lineage_cols = all_of(signaling), 
     signaling_cols = all_of(signaling)
-  ) %>% 
+  ) |> 
   # encode outcome variable as a factor
-  mutate(stimulation = as.factor(stimulation)) %>% 
+  mutate(stimulation = as.factor(stimulation)) |> 
   # split data into 3 cross-validation folds
-  tof_split_data(num_cv_folds = 3) %>% 
+  tof_split_data(num_cv_folds = 3) |> 
   # train logistic regression model with lasso regularization
   # using 3-fold cross validation
   tof_train_model(
@@ -279,11 +279,11 @@ model_result <-
 
 # assess the model's performance on the full dataset
 model_metrics <- 
-  model_result %>% 
+  model_result |> 
   tof_assess_model()
 
 
-model_result %>% 
+model_result |> 
   tof_plot_model()
 ```
 
